@@ -1,13 +1,13 @@
 FROM php:8.2-cli
 
-# Copy files from repo into container
+# Copy all files to /app inside the container
 COPY . /app
 
 # Set working directory
 WORKDIR /app
 
-# Install any PHP extensions here if needed (e.g., curl)
+# Optional: install PHP extensions if needed
 RUN docker-php-ext-install curl
 
-# Command to run (Render ignores this for cron jobs but it’s good to define)
+# ✅ Set the command that will run during cron schedule
 CMD ["php", "revcontent_pause.php"]
