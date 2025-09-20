@@ -14,8 +14,8 @@ $campaignIds = [
 ];
 
 // Determine whether to turn ON or OFF based on time
-$hour = (int) date('G'); // 0–23 hour format
-$enabled = ($hour >= 9 && $hour < 24) ? "on" : "off";
+$hour = (int) date('G'); // UTC hour
+$enabled = ($hour >= 2 && $hour < 5) ? "on" : "off";
 
 // Loop through each campaign and send API request
 foreach ($campaignIds as $campaignId) {
