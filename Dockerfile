@@ -1,19 +1,16 @@
+# Use official PHP CLI (Debian) and enable the cURL extension
 FROM php:8.2-cli
 
-# Install curl
-RUN apt-get update && apt-get install -y curl unzip
-
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-
-# Set working directory
 WORKDIR /app
 
-# Copy app files
-COPY . .
+# Install libcurl and enable PHP's curl extension
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcurl4-openssl-dev ca-certificates \
+ && docker-php-ext-install curl \
+ && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN composer install
+# Copy your script
+COPY revcontent_pause.php /app/
 
-# Run the PHP script
-CMD [ "php", "revcontent_pause.php" ]
+# Default command (Render Cron will override with its Command, but this is handy for local runs)
+CMD ["php", "/app/revcontent_pause.php"]
