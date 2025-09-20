@@ -1,13 +1,19 @@
 FROM php:8.2-cli
 
-# Copy all files to /app inside the container
-COPY . /app
+# Install curl
+RUN apt-get update && apt-get install -y curl unzip
+
+# Install Composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
 
 # Set working directory
 WORKDIR /app
 
-# Optional: install PHP extensions if needed
-RUN docker-php-ext-install curl
+# Copy app files
+COPY . .
 
-# ✅ Set the command that will run during cron schedule
-CMD ["php", "revcontent_pause.php"]
+# Install dependencies
+RUN composer install
+
+# Run the PHP script
+CMD [ "php", "revcontent_pause.php" ]
