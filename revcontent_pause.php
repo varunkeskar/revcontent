@@ -1,43 +1,92 @@
 <?php
+declare(strict_types=1);
 
-// Read the token from Render's environment variables
-$accessToken = $_ENV['ACCESS_TOKEN'];
+/**
+ * Revcontent time-based campaign toggler for Render Cron
+ *
+ * ENV VARS (Render -> Environment):
+ *   ACCESS_TOKEN   = <your bearer token>  (required)
+ *   CAMPAIGN_IDS   = 2453224,2448613      (optional, comma-separated)
+ *
+ * CRON (Render):
+ *   0 * * * *      # run hourly
+ *
+ * Logic:
+ *   ON between 9:00 AM and 11:59 PM EST (UTC 14:00–04:59).
+ *   OFF otherwise.
+ *
+ * NOTE: This uses fixed EST (UTC-5). If you actually want local US Eastern
+ * with daylight saving (EDT), update the window accordingly.
+ */
 
-// Campaigns to manage
-$campaignIds = [
-    2453224,
-    2448613
-];
+const API_URL = 'https://api.revcontent.io/stats/api/v1.0/boosts';
 
-// Get current UTC hour
-$hour = (int) gmdate('G'); // 0–23 in UTC
+// --- Env & input ---
+$accessToken = getenv('ACCESS_TOKEN');
+if (!$accessToken) {
+    fwrite(STDERR, "[" . gmdate('Y-m-d H:i:s') . " UTC] ERROR: ACCESS_TOKEN is not set.\n");
+    exit(1);
+}
 
-// Enable if between 1 AM and 3:59 AM UTC (i.e. 9 PM – 11:59 PM EST)
-$enabled = ($hour >= 1 && $hour < 4) ? "on" : "off";
+$idsEnv = getenv('CAMPAIGN_IDS');
+if ($idsEnv) {
+    $campaignIds = array_values(array_filter(array_map('intval', explode(',', $idsEnv))));
+} else {
+    // Fallback to your known campaigns
+    $campaignIds = [2453224, 2448613];
+}
+if (empty($campaignIds)) {
+    fwrite(STDERR, "[" . gmdate('Y-m-d H:i:s') . " UTC] ERROR: No campaign IDs provided.\n");
+    exit(1);
+}
 
-// Process each campaign
-foreach ($campaignIds as $campaignId) {
-    $ch = curl_init('https://api.revcontent.io/stats/api/v1.0/boosts');
+// --- Time window: 9 AM–11:59 PM EST => 14:00–04:59 UTC ---
+$utcHour = (int) gmdate('G'); // 0–23 UTC hour
+$enabled  = ($utcHour >= 14 || $utcHour < 5) ? 'on' : 'off';
 
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        "Authorization: Bearer $accessToken",
-        "Content-Type: application/json"
+// --- Helper: call API for one campaign ---
+function toggleCampaign(int $campaignId, string $enabled, string $token): array {
+    $ch = curl_init(API_URL);
+    $payload = json_encode([
+        'id'      => $campaignId,
+        'enabled' => $enabled,
     ]);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-        "id" => $campaignId,
-        "enabled" => $enabled
-    ]));
 
-    $response = curl_exec($ch);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => [
+            "Authorization: Bearer {$token}",
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT        => 30,
+    ]);
+
+    $body     = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err      = curl_error($ch);
     curl_close($ch);
 
-    // Output for logs
-    echo "[" . gmdate('Y-m-d H:i:s') . " UTC] ";
-    echo "Campaign {$campaignId} → ";
-    echo strtoupper($enabled) . " → ";
-    echo "Status: $httpCode\n";
-    echo "Response: $response\n\n";
+    return [
+        'httpCode' => $httpCode ?: 0,
+        'body'     => $body === false ? '' : $body,
+        'error'    => $err,
+    ];
+}
+
+// --- Run for each campaign ---
+$now = gmdate('Y-m-d H:i:s');
+foreach ($campaignIds as $id) {
+    $res = toggleCampaign($id, $enabled, $accessToken);
+
+    echo "[{$now} UTC] Campaign {$id} → " . strtoupper($enabled) .
+         " → HTTP {$res['httpCode']}\n";
+
+    if ($res['error']) {
+        echo "cURL error: {$res['error']}\n\n";
+    } else {
+        echo "Response: {$res['body']}\n\n";
+    }
 }
